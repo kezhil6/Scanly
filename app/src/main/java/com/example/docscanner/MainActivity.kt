@@ -356,7 +356,7 @@ private suspend fun importScan(sv: Services, mode: ScanMode, out: ScanOutput, fo
                 input.use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
             }
         }
-        sv.repo.saveFile(tmp, sv.repo.defaultName(mode.label), folder)
+        sv.repo.saveFile(tmp, sv.repo.defaultName("Scan"), folder)
     }
 
 @Composable
@@ -374,7 +374,6 @@ fun HomeScreen(
     var searching by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("all") }
-    var showModes by remember { mutableStateOf(false) }
     var showNewFolder by remember { mutableStateOf(false) }
     var favTick by remember { mutableIntStateOf(0) }
     val selected = remember { mutableStateListOf<String>() }
@@ -515,6 +514,13 @@ fun HomeScreen(
                                 onClick = { sort = "size"; homeMenu = false }
                             )
                             DropdownMenuItem(
+                                text = { Text("Import PDF or photos…") },
+                                onClick = {
+                                    homeMenu = false
+                                    importLauncher.launch(arrayOf("application/pdf", "image/*"))
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Text recognition language…") },
                                 onClick = { homeMenu = false; showLang = true }
                             )
@@ -525,7 +531,7 @@ fun HomeScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { showModes = true },
+                onClick = { startScan(ScanMode.DOCUMENT) },
                 icon = { Icon(Icons.Default.DocumentScanner, contentDescription = null) },
                 text = { Text("Scan") }
             )
@@ -744,37 +750,6 @@ fun HomeScreen(
                 }
             },
             confirmButton = { TextButton(onClick = { showLang = false }) { Text("Done") } }
-        )
-    }
-
-    if (showModes) {
-        AlertDialog(
-            onDismissRequest = { showModes = false },
-            title = { Text("New scan") },
-            text = {
-                Column {
-                    ScanMode.values().forEach { m ->
-                        ListItem(
-                            modifier = Modifier.clickable {
-                                showModes = false
-                                startScan(m)
-                            },
-                            headlineContent = { Text(m.label) },
-                            supportingContent = { Text(m.hint) }
-                        )
-                    }
-                    ListItem(
-                        modifier = Modifier.clickable {
-                            showModes = false
-                            importLauncher.launch(arrayOf("application/pdf", "image/*"))
-                        },
-                        headlineContent = { Text("Import PDF or photos") },
-                        supportingContent = { Text("From your phone storage") }
-                    )
-                }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { showModes = false }) { Text("Cancel") } }
         )
     }
 

@@ -124,8 +124,8 @@ class ScanRepository(private val context: Context) {
     }
 
     fun defaultName(prefix: String = "Scan"): String {
-        val stamp = SimpleDateFormat("yyyy-MM-dd HH.mm.ss", Locale.getDefault()).format(Date())
-        return "$prefix $stamp"
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        return "${prefix}_$stamp"
     }
 
     fun saveFromUri(uri: Uri, name: String = defaultName(), folder: String = ""): File? {
