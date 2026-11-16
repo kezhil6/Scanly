@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.StarBorder
@@ -380,6 +381,8 @@ fun HomeScreen(
     var deleteSelected by remember { mutableStateOf(false) }
     var deleteOne by remember { mutableStateOf<Doc?>(null) }
     var homeMenu by remember { mutableStateOf(false) }
+    var rowMenu by remember { mutableStateOf<String?>(null) }
+    var renameDoc by remember { mutableStateOf<Doc?>(null) }
     var sort by remember { mutableStateOf("date") }
     var showLang by remember { mutableStateOf(false) }
     var langTick by remember { mutableIntStateOf(0) }
@@ -627,8 +630,26 @@ fun HomeScreen(
                                                 contentDescription = "Favorite"
                                             )
                                         }
-                                        IconButton(onClick = { deleteOne = d }) {
-                                            Icon(Icons.Default.Delete, contentDescription = "Delete")
+                                        IconButton(onClick = { sv.share(listOf(d.file), "application/pdf") }) {
+                                            Icon(Icons.Default.Share, contentDescription = "Share")
+                                        }
+                                        Box {
+                                            IconButton(onClick = { rowMenu = d.rel }) {
+                                                Icon(Icons.Default.MoreVert, contentDescription = "More")
+                                            }
+                                            DropdownMenu(
+                                                expanded = rowMenu == d.rel,
+                                                onDismissRequest = { rowMenu = null }
+                                            ) {
+                                                DropdownMenuItem(
+                                                    text = { Text("Rename") },
+                                                    onClick = { rowMenu = null; renameDoc = d }
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text("Delete") },
+                                                    onClick = { rowMenu = null; deleteOne = d }
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -638,6 +659,30 @@ fun HomeScreen(
                 }
             }
         }
+    }
+
+    renameDoc?.let { d ->
+        var text by remember(d.rel) { mutableStateOf(d.name) }
+        AlertDialog(
+            onDismissRequest = { renameDoc = null },
+            title = { Text("Rename") },
+            text = {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (repo.rename(d.file, text) == null) sv.toast("Invalid or duplicate name")
+                    renameDoc = null
+                    sv.run("Updating") { }
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { renameDoc = null }) { Text("Cancel") } }
+        )
     }
 
     deleteOne?.let { d ->

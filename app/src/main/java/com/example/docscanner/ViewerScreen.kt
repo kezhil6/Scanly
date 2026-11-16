@@ -3,6 +3,7 @@
 package com.example.docscanner
 
 import android.graphics.Bitmap
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -26,6 +27,8 @@ import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.RotateRight
 import androidx.compose.material.icons.filled.Share
@@ -88,6 +91,9 @@ fun ViewerScreen(
     var reload by remember { mutableIntStateOf(0) }
     var menu by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf("") }
+    var editMode by remember { mutableStateOf(false) }
+
+    BackHandler(enabled = editMode) { editMode = false }
 
     val saveLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/pdf")
@@ -158,9 +164,9 @@ fun ViewerScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(name, maxLines = 1) },
+                title = { Text(if (editMode) "Edit pages" else name, maxLines = 1) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = { if (editMode) editMode = false else onBack() }) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
@@ -174,17 +180,21 @@ fun ViewerScreen(
                             contentDescription = "Favorite"
                         )
                     }
-                    IconButton(onClick = onText) {
-                        Icon(Icons.Default.TextFields, contentDescription = "Text (OCR)")
+                    IconButton(onClick = { dialog = "rename" }) {
+                        Icon(Icons.Default.Edit, contentDescription = "Rename")
                     }
                     IconButton(onClick = { sv.share(listOf(file), "application/pdf") }) {
                         Icon(Icons.Default.Share, contentDescription = "Share")
+                    }
+                    IconButton(onClick = { editMode = !editMode }) {
+                        Icon(Icons.Default.GridView, contentDescription = "Edit pages")
                     }
                     IconButton(onClick = { menu = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "More")
                     }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         val items = listOf(
+                            "text" to "Text from scan (OCR)",
                             "rename" to "Rename",
                             "tags" to "Tags",
                             "move" to "Move to folder",
@@ -225,6 +235,7 @@ fun ViewerScreen(
                                                 reload++
                                             }
                                         }
+                                        "text" -> onText()
                                         "savecopy" -> saveLauncher.launch("$name.pdf")
                                         "searchable" -> sv.run("Adding text layer") {
                                             val saved = withContext(Dispatchers.IO) {
@@ -268,7 +279,7 @@ fun ViewerScreen(
                     }
                 }
                 is PageInfo.Error -> Text("Cannot show this PDF: ${i.message}", modifier = Modifier.padding(16.dp))
-                is PageInfo.Ok -> LazyVerticalGrid(
+                is PageInfo.Ok -> if (!editMode) ReadView(file, i.count) else LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     contentPadding = PaddingValues(12.dp),
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -607,6 +618,50 @@ private fun PageCard(
                 IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete page")
                 }
+            }
+        }
+    }
+}
+
+
+/** Reads the scan as one finished PDF: all pages stacked, scroll to read. */
+@Composable
+private fun ReadView(file: File, count: Int) {
+    androidx.compose.foundation.lazy.LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(8.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items(count) { p ->
+            val bmp by produceState<Bitmap?>(null, file.path, file.lastModified(), p) {
+                value = withContext(Dispatchers.IO) {
+                    try {
+                        PdfTools.renderPage(file, p, 1080)
+                    } catch (e: Throwable) {
+                        null
+                    }
+                }
+            }
+            Card(modifier = Modifier.fillMaxWidth()) {
+                val b = bmp
+                if (b != null) {
+                    Image(
+                        bitmap = b.asImageBitmap(),
+                        contentDescription = "Page ${p + 1}",
+                        contentScale = ContentScale.FillWidth,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().height(420.dp),
+                        contentAlignment = Alignment.Center
+                    ) { Text("Loading page ${p + 1}…") }
+                }
+                Text(
+                    "${p + 1} / $count",
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.padding(6.dp)
+                )
             }
         }
     }
