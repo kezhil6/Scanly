@@ -138,7 +138,6 @@ fun ScannerApp() {
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var busy by remember { mutableStateOf<String?>(null) }
     var onScanned by remember { mutableStateOf<((ScanOutput) -> Unit)?>(null) }
-    var contactDraft by remember { mutableStateOf<Exporter.Contact?>(null) }
 
     val launcher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
@@ -146,8 +145,7 @@ fun ScannerApp() {
         if (result.resultCode == Activity.RESULT_OK) {
             val r = GmsDocumentScanningResult.fromActivityResultIntent(result.data)
             if (r != null) {
-                val jpegs = r.pages?.map { it.imageUri } ?: emptyList()
-                onScanned?.invoke(ScanOutput(r.pdf?.uri, jpegs))
+                onScanned?.invoke(ScanOutput(r.pdf?.uri))
             }
         }
     }
@@ -185,10 +183,7 @@ fun ScannerApp() {
         val options = GmsDocumentScannerOptions.Builder()
             .setGalleryImportAllowed(true)
             .setPageLimit(mode.pageLimit)
-            .setResultFormats(
-                GmsDocumentScannerOptions.RESULT_FORMAT_JPEG,
-                GmsDocumentScannerOptions.RESULT_FORMAT_PDF
-            )
+            .setResultFormats(GmsDocumentScannerOptions.RESULT_FORMAT_PDF)
             .setScannerMode(GmsDocumentScannerOptions.SCANNER_MODE_FULL)
             .build()
         GmsDocumentScanning.getClient(options).getStartScanIntent(activity)
@@ -215,8 +210,7 @@ fun ScannerApp() {
             is Screen.Home -> HomeScreen(
                 sv = sv,
                 rev = rev,
-                onOpen = { screen = Screen.Viewer(it) },
-                onContact = { contactDraft = it }
+                onOpen = { screen = Screen.Viewer(it) }
             )
             is Screen.Viewer -> {
                 val file = File(repo.root, s.rel)
@@ -243,8 +237,7 @@ fun ScannerApp() {
             is Screen.Text -> TextScreen(
                 sv = sv,
                 file = File(repo.root, s.rel),
-                onBack = { screen = Screen.Viewer(s.rel) },
-                onContact = { contactDraft = it }
+                onBack = { screen = Screen.Viewer(s.rel) }
             )
         }
 
@@ -261,50 +254,7 @@ fun ScannerApp() {
                 }
             )
         }
-
-        contactDraft?.let { c ->
-            ContactDialog(c, onDismiss = { contactDraft = null })
-        }
     }
-}
-
-@Composable
-fun ContactDialog(draft: Exporter.Contact, onDismiss: () -> Unit) {
-    val context = LocalContext.current
-    var name by remember { mutableStateOf(draft.name) }
-    var company by remember { mutableStateOf(draft.company) }
-    var phone by remember { mutableStateOf(draft.phone) }
-    var email by remember { mutableStateOf(draft.email) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Save contact") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true)
-                OutlinedTextField(company, { company = it }, label = { Text("Company") }, singleLine = true)
-                OutlinedTextField(phone, { phone = it }, label = { Text("Phone") }, singleLine = true)
-                OutlinedTextField(email, { email = it }, label = { Text("Email") }, singleLine = true)
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val i = Intent(ContactsContract.Intents.Insert.ACTION).apply {
-                    type = ContactsContract.RawContacts.CONTENT_TYPE
-                    putExtra(ContactsContract.Intents.Insert.NAME, name)
-                    putExtra(ContactsContract.Intents.Insert.COMPANY, company)
-                    putExtra(ContactsContract.Intents.Insert.PHONE, phone)
-                    putExtra(ContactsContract.Intents.Insert.EMAIL, email)
-                }
-                try {
-                    context.startActivity(i)
-                } catch (e: Exception) {
-                    Toast.makeText(context, "No contacts app found", Toast.LENGTH_SHORT).show()
-                }
-                onDismiss()
-            }) { Text("Open in Contacts") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
-    )
 }
 
 @Composable
@@ -333,29 +283,13 @@ fun Thumb(file: File, modifier: Modifier = Modifier) {
     }
 }
 
-/** Turns a scanner result into a PDF in the library, depending on the scan mode. */
-private suspend fun importScan(sv: Services, mode: ScanMode, out: ScanOutput, folder: String): File =
+/** Saves the PDF returned by the scanner into the library. */
+private suspend fun importScan(sv: Services, out: ScanOutput, folder: String): File =
     withContext(Dispatchers.IO) {
         val tmp = sv.tmpPdf()
-        when (mode) {
-            ScanMode.ID_CARD -> {
-                val bmps = out.jpegUris.mapNotNull { PdfTools.decodeScaled(sv.context, it, 2000) }
-                if (bmps.isEmpty()) error("No image returned")
-                PdfTools.bitmapsToPdf(listOf(PdfTools.composeIdCardPage(bmps)), tmp)
-            }
-            ScanMode.WHITEBOARD -> {
-                val bmps = out.jpegUris.mapNotNull {
-                    PdfTools.decodeScaled(sv.context, it, 1600)?.let { b -> PdfTools.enhanceWhiteboard(b) }
-                }
-                if (bmps.isEmpty()) error("No image returned")
-                PdfTools.bitmapsToPdf(bmps, tmp)
-            }
-            else -> {
-                val uri = out.pdfUri ?: error("No PDF returned")
-                val input = sv.context.contentResolver.openInputStream(uri) ?: error("Cannot read scan")
-                input.use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
-            }
-        }
+        val uri = out.pdfUri ?: error("No PDF returned")
+        val input = sv.context.contentResolver.openInputStream(uri) ?: error("Cannot read scan")
+        input.use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
         sv.repo.saveFile(tmp, sv.repo.defaultName("Scan"), folder)
     }
 
@@ -363,8 +297,7 @@ private suspend fun importScan(sv: Services, mode: ScanMode, out: ScanOutput, fo
 fun HomeScreen(
     sv: Services,
     rev: Int,
-    onOpen: (String) -> Unit,
-    onContact: (Exporter.Contact) -> Unit
+    onOpen: (String) -> Unit
 ) {
     val repo = sv.repo
     val docs = remember(rev) { repo.list() }
@@ -421,18 +354,11 @@ fun HomeScreen(
         }
     }
 
-    fun startScan(mode: ScanMode) {
+    fun startScan() {
         val folder = if (filter.startsWith("f:")) filter.removePrefix("f:") else ""
-        sv.scan(mode) { out ->
+        sv.scan(ScanMode.DOCUMENT) { out ->
             sv.run("Saving scan") {
-                val file = importScan(sv, mode, out, folder)
-                if (mode == ScanMode.BUSINESS_CARD) {
-                    val text = withContext(Dispatchers.IO) {
-                        val first = out.jpegUris.firstOrNull()?.let { PdfTools.decodeScaled(sv.context, it, 2000) }
-                        if (first != null) PdfTools.recognizeText(first) else ""
-                    }
-                    if (text.isNotBlank()) onContact(Exporter.parseBusinessCard(text))
-                }
+                val file = importScan(sv, out, folder)
                 sv.reindex(file)
             }
         }
@@ -531,7 +457,7 @@ fun HomeScreen(
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
-                onClick = { startScan(ScanMode.DOCUMENT) },
+                onClick = { startScan() },
                 icon = { Icon(Icons.Default.DocumentScanner, contentDescription = null) },
                 text = { Text("Scan") }
             )

@@ -9,15 +9,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-enum class ScanMode(val label: String, val hint: String, val pageLimit: Int) {
-    DOCUMENT("Document", "Pages, letters, receipts, forms", 50),
-    BOOK("Book", "Many pages in one go", 100),
-    ID_CARD("ID card", "Front and back on one page", 2),
-    BUSINESS_CARD("Business card", "Reads the text and offers to save a contact", 1),
-    WHITEBOARD("Whiteboard", "Boosts contrast for boards and faded pages", 10)
+enum class ScanMode(val pageLimit: Int) {
+    DOCUMENT(50)
 }
 
-class ScanOutput(val pdfUri: Uri?, val jpegUris: List<Uri>)
+class ScanOutput(val pdfUri: Uri?)
 
 /** Everything the screens need from the activity. */
 class Services(

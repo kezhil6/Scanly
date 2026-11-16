@@ -118,48 +118,6 @@ object PdfTools {
         return Bitmap.createScaledBitmap(bmp, (bmp.width * s).toInt(), (bmp.height * s).toInt(), true)
     }
 
-    /** Places one or two ID-card sides on a single A4 page. */
-    fun composeIdCardPage(cards: List<Bitmap>): Bitmap {
-        val w = 1240
-        val h = 1754
-        val page = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-        val c = Canvas(page)
-        c.drawColor(Color.WHITE)
-        val paint = Paint(Paint.FILTER_BITMAP_FLAG)
-        var y = 160f
-        for (card in cards.take(2)) {
-            var cw = 1000f
-            var ch = card.height.toFloat() / card.width * cw
-            val maxH = 720f
-            if (ch > maxH) {
-                cw = cw * maxH / ch
-                ch = maxH
-            }
-            val left = (w - cw) / 2f
-            c.drawBitmap(card, null, RectF(left, y, left + cw, y + ch), paint)
-            y += ch + 120f
-        }
-        return page
-    }
-
-    /** Boosts contrast / brightness so whiteboards and faded pages read clearly. */
-    fun enhanceWhiteboard(src: Bitmap): Bitmap {
-        val out = Bitmap.createBitmap(src.width, src.height, Bitmap.Config.ARGB_8888)
-        val contrast = 1.7f
-        val translate = (-0.5f * contrast + 0.5f) * 255f + 25f
-        val cm = ColorMatrix(
-            floatArrayOf(
-                contrast, 0f, 0f, 0f, translate,
-                0f, contrast, 0f, 0f, translate,
-                0f, 0f, contrast, 0f, translate,
-                0f, 0f, 0f, 1f, 0f
-            )
-        )
-        val paint = Paint().apply { colorFilter = ColorMatrixColorFilter(cm) }
-        Canvas(out).drawBitmap(src, 0f, 0f, paint)
-        return out
-    }
-
     // ---------- Page operations (lossless, via PDFBox) ----------
 
     /**

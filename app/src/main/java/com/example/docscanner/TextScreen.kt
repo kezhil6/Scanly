@@ -41,8 +41,7 @@ import java.io.File
 fun TextScreen(
     sv: Services,
     file: File,
-    onBack: () -> Unit,
-    onContact: (Exporter.Contact) -> Unit
+    onBack: () -> Unit
 ) {
     val clipboard = LocalClipboardManager.current
     val name = file.nameWithoutExtension
@@ -116,7 +115,6 @@ fun TextScreen(
                             onClick = { exportAs("xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") },
                             label = { Text("Excel") }
                         )
-                        AssistChip(onClick = { onContact(Exporter.parseBusinessCard(t)) }, label = { Text("Save as contact") })
                         AssistChip(onClick = { attempt++ }, label = { Text("Re-scan text") })
                     }
                     if (t.isBlank()) {

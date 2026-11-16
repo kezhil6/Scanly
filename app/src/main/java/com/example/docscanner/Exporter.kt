@@ -107,17 +107,4 @@ object Exporter {
             )
         }
     }
-
-    // ---------- Business card parsing ----------
-
-    data class Contact(val name: String, val company: String, val phone: String, val email: String)
-
-    fun parseBusinessCard(text: String): Contact {
-        val email = Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}").find(text)?.value ?: ""
-        val phone = Regex("(\\+?\\d[\\d\\s().-]{7,}\\d)").find(text)?.value?.trim() ?: ""
-        val lines = text.lines().map { it.trim() }.filter {
-            it.isNotEmpty() && !it.contains("@") && !it.any { c -> c.isDigit() } && !it.lowercase().startsWith("www")
-        }
-        return Contact(lines.getOrElse(0) { "" }, lines.getOrElse(1) { "" }, phone, email)
-    }
 }
