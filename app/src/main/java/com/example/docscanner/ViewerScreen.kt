@@ -3,6 +3,8 @@
 package com.example.docscanner
 
 import android.graphics.Bitmap
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -86,6 +88,20 @@ fun ViewerScreen(
     var reload by remember { mutableIntStateOf(0) }
     var menu by remember { mutableStateOf(false) }
     var dialog by remember { mutableStateOf("") }
+
+    val saveLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/pdf")
+    ) { uri ->
+        if (uri != null) {
+            sv.run("Saving copy") {
+                withContext(Dispatchers.IO) {
+                    val out = sv.context.contentResolver.openOutputStream(uri) ?: error("Cannot write there")
+                    out.use { o -> file.inputStream().use { it.copyTo(o) } }
+                }
+                sv.toast("Saved")
+            }
+        }
+    }
 
     val doc = remember(rev, reload, file.path) { repo.find(repo.relOf(file)) }
     val name = file.nameWithoutExtension
@@ -172,10 +188,12 @@ fun ViewerScreen(
                             "rename" to "Rename",
                             "tags" to "Tags",
                             "move" to "Move to folder",
+                            "savecopy" to "Save a copy to phone / Drive…",
                             "addpages" to "Add pages (scan)",
                             "merge" to "Merge with other scans",
                             "split" to "Extract / split pages",
                             "compress" to "Compress",
+                            "searchable" to "Make searchable PDF (copy)",
                             "protect" to "Password protect (copy)",
                             "unlock" to "Remove password (copy)",
                             "jpg" to "Export as JPG images",
@@ -206,6 +224,16 @@ fun ViewerScreen(
                                                 sv.reindex(file)
                                                 reload++
                                             }
+                                        }
+                                        "savecopy" -> saveLauncher.launch("$name.pdf")
+                                        "searchable" -> sv.run("Adding text layer") {
+                                            val saved = withContext(Dispatchers.IO) {
+                                                val tmp = sv.tmpPdf()
+                                                PdfTools.makeSearchable(file, tmp)
+                                                repo.saveFile(tmp, "$name (searchable)", doc?.folder ?: "")
+                                            }
+                                            sv.reindex(saved)
+                                            sv.toast("Searchable copy saved")
                                         }
                                         "jpg" -> sv.run("Exporting images") {
                                             val files = withContext(Dispatchers.IO) {

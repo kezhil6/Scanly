@@ -36,6 +36,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
@@ -45,6 +46,8 @@ import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -52,6 +55,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -97,6 +101,12 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         PdfTools.init(this)
+        val prefs = getSharedPreferences("scanly", MODE_PRIVATE)
+        PdfTools.ocrLang = try {
+            OcrLang.valueOf(prefs.getString("ocr_lang", "LATIN") ?: "LATIN")
+        } catch (e: Exception) {
+            OcrLang.LATIN
+        }
         setContent {
             val dark = isSystemInDarkTheme()
             val ctx = LocalContext.current
@@ -369,6 +379,10 @@ fun HomeScreen(
     val selected = remember { mutableStateListOf<String>() }
     var deleteSelected by remember { mutableStateOf(false) }
     var deleteOne by remember { mutableStateOf<Doc?>(null) }
+    var homeMenu by remember { mutableStateOf(false) }
+    var sort by remember { mutableStateOf("date") }
+    var showLang by remember { mutableStateOf(false) }
+    var langTick by remember { mutableIntStateOf(0) }
 
     BackHandler(enabled = selected.isNotEmpty()) { selected.clear() }
 
@@ -422,9 +436,9 @@ fun HomeScreen(
         }
     }
 
-    val shown = remember(docs, filter, query, favTick) {
+    val shown = remember(docs, filter, query, favTick, sort) {
         val q = query.trim()
-        docs.filter { d ->
+        val filtered = docs.filter { d ->
             val okFilter = when {
                 filter == "all" -> true
                 filter == "fav" -> d.favorite
@@ -437,6 +451,11 @@ fun HomeScreen(
                 d.folder.contains(q, ignoreCase = true) ||
                 d.tags.any { it.contains(q, ignoreCase = true) } ||
                 (d.hasOcr && repo.ocrText(d.file).contains(q, ignoreCase = true)))
+        }
+        when (sort) {
+            "name" -> filtered.sortedBy { it.name.lowercase() }
+            "size" -> filtered.sortedByDescending { it.file.length() }
+            else -> filtered
         }
     }
 
@@ -474,6 +493,27 @@ fun HomeScreen(
                             Icon(
                                 if (searching) Icons.Default.Close else Icons.Default.Search,
                                 contentDescription = "Search"
+                            )
+                        }
+                        IconButton(onClick = { homeMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "More")
+                        }
+                        DropdownMenu(expanded = homeMenu, onDismissRequest = { homeMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Sort: newest first" + if (sort == "date") "  ✓" else "") },
+                                onClick = { sort = "date"; homeMenu = false }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Sort: name A–Z" + if (sort == "name") "  ✓" else "") },
+                                onClick = { sort = "name"; homeMenu = false }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Sort: largest first" + if (sort == "size") "  ✓" else "") },
+                                onClick = { sort = "size"; homeMenu = false }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Text recognition language…") },
+                                onClick = { homeMenu = false; showLang = true }
                             )
                         }
                     }
@@ -631,6 +671,34 @@ fun HomeScreen(
                 }) { Text("Delete") }
             },
             dismissButton = { TextButton(onClick = { deleteSelected = false }) { Text("Cancel") } }
+        )
+    }
+
+    if (showLang) {
+        val ctx = sv.context
+        AlertDialog(
+            onDismissRequest = { showLang = false },
+            title = { Text("Text recognition language") },
+            text = {
+                Column {
+                    Text("Used for searching, copying and exporting text. Re-scan text on a scan to apply a new language.")
+                    OcrLang.values().forEach { l ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                PdfTools.ocrLang = l
+                                ctx.getSharedPreferences("scanly", android.content.Context.MODE_PRIVATE)
+                                    .edit().putString("ocr_lang", l.name).apply()
+                                langTick++
+                            },
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(selected = PdfTools.ocrLang == l && langTick >= 0, onClick = null)
+                            Text("  " + l.label)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showLang = false }) { Text("Done") } }
         )
     }
 

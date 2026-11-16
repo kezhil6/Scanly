@@ -15,7 +15,13 @@ import android.net.Uri
 import android.os.ParcelFileDescriptor
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.Text
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
+import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.tom_roush.pdfbox.android.PDFBoxResourceLoader
 import com.tom_roush.pdfbox.pdmodel.PDDocument
@@ -25,9 +31,19 @@ import com.tom_roush.pdfbox.pdmodel.common.PDRectangle
 import com.tom_roush.pdfbox.pdmodel.encryption.AccessPermission
 import com.tom_roush.pdfbox.pdmodel.encryption.StandardProtectionPolicy
 import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
+import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
+import com.tom_roush.pdfbox.pdmodel.graphics.state.RenderingMode
 import java.io.ByteArrayOutputStream
 import java.io.File
+
+enum class OcrLang(val label: String) {
+    LATIN("English and other Latin scripts"),
+    DEVANAGARI("Hindi, Marathi, Nepali (Devanagari)"),
+    CHINESE("Chinese"),
+    JAPANESE("Japanese"),
+    KOREAN("Korean")
+}
 
 /** All PDF / image processing. Call from a background thread. */
 object PdfTools {
@@ -280,13 +296,72 @@ object PdfTools {
 
     // ---------- OCR ----------
 
-    fun recognizeText(bitmap: Bitmap): String {
-        val rec = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    @Volatile
+    var ocrLang: OcrLang = OcrLang.LATIN
+
+    private fun recognizer(): TextRecognizer = when (ocrLang) {
+        OcrLang.LATIN -> TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        OcrLang.DEVANAGARI -> TextRecognition.getClient(DevanagariTextRecognizerOptions.Builder().build())
+        OcrLang.CHINESE -> TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
+        OcrLang.JAPANESE -> TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
+        OcrLang.KOREAN -> TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
+    }
+
+    fun recognizeFull(bitmap: Bitmap): Text {
+        val rec = recognizer()
         try {
-            val result = Tasks.await(rec.process(InputImage.fromBitmap(bitmap, 0)))
-            return result.text
+            return Tasks.await(rec.process(InputImage.fromBitmap(bitmap, 0)))
         } finally {
             rec.close()
+        }
+    }
+
+    fun recognizeText(bitmap: Bitmap): String = recognizeFull(bitmap).text
+
+    /**
+     * Adds an invisible text layer so the PDF becomes searchable / selectable in other apps.
+     * Only Latin characters can be embedded this way; other scripts are skipped.
+     */
+    fun makeSearchable(src: File, dst: File) {
+        val n = pageCount(src)
+        val doc = PDDocument.load(src)
+        try {
+            for (i in 0 until n) {
+                val page = doc.getPage(i)
+                if (page.getRotation() != 0) continue
+                val bmp = renderPage(src, i, 1600)
+                val result = try {
+                    recognizeFull(bmp)
+                } finally {
+                    bmp.recycle()
+                }
+                val box = page.getMediaBox()
+                val scale = box.getWidth() / 1600f
+                val cs = PDPageContentStream(doc, page, PDPageContentStream.AppendMode.APPEND, true, true)
+                try {
+                    for (block in result.textBlocks) {
+                        for (line in block.lines) {
+                            val r = line.boundingBox ?: continue
+                            val txt = line.text.filter { c -> c.code in 32..126 || c.code in 160..255 }
+                            if (txt.isBlank()) continue
+                            val fontSize = (r.height() * scale * 0.8f).coerceIn(4f, 72f)
+                            val x = box.getLowerLeftX() + r.left * scale
+                            val y = box.getLowerLeftY() + box.getHeight() - r.bottom * scale
+                            cs.beginText()
+                            cs.setRenderingMode(RenderingMode.NEUTRAL)
+                            cs.setFont(PDType1Font.HELVETICA, fontSize)
+                            cs.newLineAtOffset(x, y)
+                            cs.showText(txt)
+                            cs.endText()
+                        }
+                    }
+                } finally {
+                    cs.close()
+                }
+            }
+            doc.save(dst)
+        } finally {
+            doc.close()
         }
     }
 
