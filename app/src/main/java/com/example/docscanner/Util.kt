@@ -10,7 +10,8 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 enum class ScanMode(val pageLimit: Int) {
-    DOCUMENT(50)
+    DOCUMENT(50),
+    SINGLE(1)
 }
 
 class ScanOutput(val pdfUri: Uri?)
@@ -25,6 +26,15 @@ class Services(
 ) {
     fun toast(msg: String) {
         Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+    }
+
+    /** Copies the PDF returned by the scanner into a temp file (call off the main thread). */
+    fun copyScan(out: ScanOutput): File {
+        val uri = out.pdfUri ?: error("No PDF returned")
+        val input = context.contentResolver.openInputStream(uri) ?: error("Cannot read scan")
+        val tmp = tmpPdf()
+        input.use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
+        return tmp
     }
 
     fun tmpPdf(): File = File(context.cacheDir, "tmp_${System.nanoTime()}.pdf")

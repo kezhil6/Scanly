@@ -3,11 +3,9 @@
 package com.example.docscanner
 
 import android.app.Activity
-import android.content.Intent
 import android.graphics.Bitmap
 import android.os.Build
 import android.os.Bundle
-import android.provider.ContactsContract
 import android.text.format.DateUtils
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -96,6 +94,7 @@ sealed class Screen {
     data class Viewer(val rel: String) : Screen()
     data class Annotate(val rel: String, val page: Int) : Screen()
     data class Text(val rel: String) : Screen()
+    object Review : Screen()
 }
 
 class MainActivity : ComponentActivity() {
@@ -137,6 +136,8 @@ fun ScannerApp() {
     var rev by remember { mutableIntStateOf(0) }
     var screen by remember { mutableStateOf<Screen>(Screen.Home) }
     var busy by remember { mutableStateOf<String?>(null) }
+    var draft by remember { mutableStateOf<File?>(null) }
+    var draftFolder by remember { mutableStateOf("") }
     var onScanned by remember { mutableStateOf<((ScanOutput) -> Unit)?>(null) }
 
     val launcher = rememberLauncherForActivityResult(
@@ -197,6 +198,14 @@ fun ScannerApp() {
 
     val sv = remember { Services(context, repo, run, scan, reindex) }
 
+    val openDraft: (ScanOutput, String) -> Unit = { out, folder ->
+        run("Preparing scan") {
+            draft = withContext(Dispatchers.IO) { sv.copyScan(out) }
+            draftFolder = folder
+            screen = Screen.Review
+        }
+    }
+
     BackHandler(enabled = screen !is Screen.Home) {
         screen = when (val s = screen) {
             is Screen.Annotate -> Screen.Viewer(s.rel)
@@ -210,7 +219,8 @@ fun ScannerApp() {
             is Screen.Home -> HomeScreen(
                 sv = sv,
                 rev = rev,
-                onOpen = { screen = Screen.Viewer(it) }
+                onOpen = { screen = Screen.Viewer(it) },
+                onDraft = openDraft
             )
             is Screen.Viewer -> {
                 val file = File(repo.root, s.rel)
@@ -234,6 +244,27 @@ fun ScannerApp() {
                 pageIndex = s.page,
                 onDone = { screen = Screen.Viewer(s.rel) }
             )
+            is Screen.Review -> {
+                val d = draft
+                if (d == null) {
+                    LaunchedEffect(Unit) { screen = Screen.Home }
+                } else {
+                    ReviewScreen(
+                        sv = sv,
+                        draft = d,
+                        folder = draftFolder,
+                        onSaved = {
+                            draft = null
+                            screen = Screen.Home
+                        },
+                        onDiscard = {
+                            d.delete()
+                            draft = null
+                            screen = Screen.Home
+                        }
+                    )
+                }
+            }
             is Screen.Text -> TextScreen(
                 sv = sv,
                 file = File(repo.root, s.rel),
@@ -283,21 +314,12 @@ fun Thumb(file: File, modifier: Modifier = Modifier) {
     }
 }
 
-/** Saves the PDF returned by the scanner into the library. */
-private suspend fun importScan(sv: Services, out: ScanOutput, folder: String): File =
-    withContext(Dispatchers.IO) {
-        val tmp = sv.tmpPdf()
-        val uri = out.pdfUri ?: error("No PDF returned")
-        val input = sv.context.contentResolver.openInputStream(uri) ?: error("Cannot read scan")
-        input.use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
-        sv.repo.saveFile(tmp, sv.repo.defaultName("Scan"), folder)
-    }
-
 @Composable
 fun HomeScreen(
     sv: Services,
     rev: Int,
-    onOpen: (String) -> Unit
+    onOpen: (String) -> Unit,
+    onDraft: (ScanOutput, String) -> Unit
 ) {
     val repo = sv.repo
     val docs = remember(rev) { repo.list() }
@@ -356,12 +378,7 @@ fun HomeScreen(
 
     fun startScan() {
         val folder = if (filter.startsWith("f:")) filter.removePrefix("f:") else ""
-        sv.scan(ScanMode.DOCUMENT) { out ->
-            sv.run("Saving scan") {
-                val file = importScan(sv, out, folder)
-                sv.reindex(file)
-            }
-        }
+        sv.scan(ScanMode.DOCUMENT) { out -> onDraft(out, folder) }
     }
 
     val shown = remember(docs, filter, query, favTick, sort) {

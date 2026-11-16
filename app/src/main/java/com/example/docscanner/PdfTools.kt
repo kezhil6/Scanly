@@ -3,12 +3,7 @@ package com.example.docscanner
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
-import android.graphics.Paint
-import android.graphics.RectF
 import android.graphics.pdf.PdfDocument
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
@@ -34,7 +29,6 @@ import com.tom_roush.pdfbox.pdmodel.graphics.image.JPEGFactory
 import com.tom_roush.pdfbox.pdmodel.font.PDType1Font
 import com.tom_roush.pdfbox.pdmodel.graphics.image.LosslessFactory
 import com.tom_roush.pdfbox.pdmodel.graphics.state.RenderingMode
-import java.io.ByteArrayOutputStream
 import java.io.File
 
 enum class OcrLang(val label: String) {
@@ -140,6 +134,23 @@ object PdfTools {
         } finally {
             out.close()
             source.close()
+        }
+    }
+
+    /** Swaps one page of [src] for the first page of [replacement]. */
+    fun replacePage(src: File, index: Int, replacement: File, dst: File) {
+        val a = PDDocument.load(src)
+        val b = PDDocument.load(replacement)
+        val out = PDDocument()
+        try {
+            for (i in 0 until a.getNumberOfPages()) {
+                out.importPage(if (i == index) b.getPage(0) else a.getPage(i))
+            }
+            out.save(dst)
+        } finally {
+            out.close()
+            a.close()
+            b.close()
         }
     }
 
@@ -364,11 +375,5 @@ object PdfTools {
             }
         }
         return if (result.isEmpty()) null else result
-    }
-
-    fun bitmapToPngBytes(b: Bitmap): ByteArray {
-        val o = ByteArrayOutputStream()
-        b.compress(Bitmap.CompressFormat.PNG, 100, o)
-        return o.toByteArray()
     }
 }
