@@ -348,7 +348,7 @@ object PdfTools {
                             val x = box.getLowerLeftX() + r.left * scale
                             val y = box.getLowerLeftY() + box.getHeight() - r.bottom * scale
                             cs.beginText()
-                            cs.setRenderingMode(RenderingMode.NEUTRAL)
+                            cs.setRenderingMode(RenderingMode.NEITHER)
                             cs.setFont(PDType1Font.HELVETICA, fontSize)
                             cs.newLineAtOffset(x, y)
                             cs.showText(txt)
